@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 import { spawn } from 'child_process';
-import { resolve } from 'path';
+import { realpathSync } from 'node:fs';
 import { fileURLToPath } from 'url';
 import { Command, Option } from 'commander';
 import { simpleGit, type SimpleGit } from 'simple-git';
@@ -499,11 +499,20 @@ async function main(): Promise<void> {
   await program.parseAsync();
 }
 
-const isMainModule =
-  process.argv[1] !== undefined &&
-  resolve(process.argv[1]) === resolve(fileURLToPath(import.meta.url));
+function isCliEntryPoint(): boolean {
+  const entryArg = process.argv[1];
+  if (entryArg === undefined) {
+    return false;
+  }
 
-if (isMainModule) {
+  try {
+    return realpathSync(entryArg) === realpathSync(fileURLToPath(import.meta.url));
+  } catch {
+    return false;
+  }
+}
+
+if (isCliEntryPoint()) {
   void main();
 }
 
