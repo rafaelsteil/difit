@@ -10,6 +10,7 @@ import {
   type DiffSelection,
 } from '../types/diff.js';
 import { getMergeBaseTargetRef, normalizeBaseMode } from '../utils/diffSelection.js';
+import { type StartupTimer } from '../utils/startup-timer.js';
 
 import { isGeneratedFile } from './generated-file-check.js';
 
@@ -60,6 +61,7 @@ export class GitDiffParser {
     selection: DiffSelection,
     ignoreWhitespace = false,
     contextLines?: number,
+    startupTimer?: StartupTimer,
   ): Promise<DiffResponse> {
     const { targetCommitish, baseCommitish } = selection;
     const requestedBaseMode =
@@ -107,6 +109,8 @@ export class GitDiffParser {
         diffArgs = [baseHash, targetHash];
       }
 
+      startupTimer?.mark('resolveCommits');
+
       if (ignoreWhitespace) {
         diffArgs.push('-w');
       }
@@ -121,10 +125,13 @@ export class GitDiffParser {
 
       // Single git invocation for better startup latency on large repositories.
       const diffRaw = await this.git.diff(diffArgs);
-      const files = await this.markGitattributesGeneratedFiles(
-        this.parseUnifiedDiff(diffRaw),
-        attributesRef,
-      );
+      startupTimer?.mark('git.diff', `(${formatBytes(diffRaw.length)})`);
+
+      const parsedFiles = this.parseUnifiedDiff(diffRaw);
+      startupTimer?.mark('parseUnifiedDiff', `(${parsedFiles.length} files)`);
+
+      const files = await this.markGitattributesGeneratedFiles(parsedFiles, attributesRef);
+      startupTimer?.mark('gitattributes');
 
       return {
         commit: resolvedCommit,
@@ -605,8 +612,9 @@ export class GitDiffParser {
     }
   }
 
-  parseStdinDiff(diffContent: string): DiffResponse {
+  parseStdinDiff(diffContent: string, startupTimer?: StartupTimer): DiffResponse {
     const files = this.parseUnifiedDiff(diffContent);
+    startupTimer?.mark('parseStdinDiff', `(${files.length} files)`);
 
     return {
       commit: 'stdin diff',
@@ -866,4 +874,14 @@ export class GitDiffParser {
       resolvedTarget,
     };
   }
+}
+
+function formatBytes(bytes: number): string {
+  if (bytes < 1024) {
+    return `${bytes} B`;
+  }
+  if (bytes < 1024 * 1024) {
+    return `${(bytes / 1024).toFixed(1)} KB`;
+  }
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }

@@ -6,6 +6,12 @@ import { createCliStdoutProxy } from '../dev/dev-stdout.js';
 
 const rawArgs = process.argv.slice(2);
 const cliArgs = [...rawArgs, '--no-open'];
+const startupStartedAt = performance.now();
+
+function logDevStartup(label) {
+  const elapsedMs = Math.round(performance.now() - startupStartedAt);
+  console.log(`[startup] ${label}: ${elapsedMs}ms`);
+}
 
 // Wait for CLI server to be ready, then start Vite
 let cliProcess = null;
@@ -19,6 +25,7 @@ const cliStdoutProxy = createCliStdoutProxy({
       return;
     }
 
+    logDevStartup('cli server ready');
     console.log('🚀 Starting Vite dev server...');
     viteProcess = spawn('pnpm', ['exec', 'vite', '--open', '--clearScreen=false'], {
       stdio: 'inherit',
@@ -80,6 +87,7 @@ function startCompileProcess() {
       return;
     }
 
+    logDevStartup('tsc');
     startCliProcess();
   });
 }

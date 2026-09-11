@@ -24,6 +24,7 @@ import {
   resolveEditorOption,
 } from '../utils/editorOptions.js';
 import { getFileExtension } from '../utils/fileUtils.js';
+import { StartupTimer } from '../utils/startup-timer.js';
 
 import { FileWatcherService } from './file-watcher.js';
 import { GitDiffParser } from './git-diff.js';
@@ -124,6 +125,7 @@ function createCommentSessionKey(selection: DiffSelection): string {
 export async function startServer(
   options: ServerOptions,
 ): Promise<{ port: number; url: string; isEmpty?: boolean; server?: Server }> {
+  const startupTimer = new StartupTimer();
   const app = express();
   const repositoryPath = resolve(options.repoPath ?? process.cwd());
   const repositoryId = createHash('sha256').update(repositoryPath).digest('hex');
@@ -159,9 +161,12 @@ export async function startServer(
     next();
   });
 
+  startupTimer.mark('setupExpress');
+
   // Skip validation if using stdin diff
   if (!options.stdinDiff) {
     const isValidCommit = await parser.validateCommit(initialSelection.targetCommitish);
+    startupTimer.mark('validateCommit');
     if (!isValidCommit) {
       throw new Error(`Invalid or non-existent commit: ${initialSelection.targetCommitish}`);
     }
@@ -171,12 +176,13 @@ export async function startServer(
   let initialDiffData: DiffResponse;
   if (options.stdinDiff) {
     // Parse stdin diff directly
-    initialDiffData = parser.parseStdinDiff(options.stdinDiff);
+    initialDiffData = parser.parseStdinDiff(options.stdinDiff, startupTimer);
   } else {
     initialDiffData = await parser.parseDiff(
       initialSelection,
       initialIgnoreWhitespace,
       options.contextLines,
+      startupTimer,
     );
     setCachedDiffResponse(
       diffDataCache,
@@ -1047,11 +1053,14 @@ export async function startServer(
     });
   }
 
+  startupTimer.mark('setupHttp');
+
   const { port, url, server } = await startServerWithFallback(
     app,
     options.preferredPort || 4966,
     options.host || 'localhost',
   );
+  startupTimer.mark('listen');
 
   // Security warning for non-localhost binding
   if (options.host && options.host !== '127.0.0.1' && options.host !== 'localhost') {
@@ -1067,6 +1076,8 @@ export async function startServer(
     } catch (error) {
       console.warn('⚠️  File watcher failed to start:', error);
       console.warn('   Continuing without file watching...');
+    } finally {
+      startupTimer.mark('fileWatcher');
     }
   }
 
@@ -1078,8 +1089,12 @@ export async function startServer(
       await open(url);
     } catch {
       console.warn('Failed to open browser automatically');
+    } finally {
+      startupTimer.mark('openBrowser');
     }
   }
+
+  startupTimer.total('startServer');
 
   return { port, url, isEmpty: initialDiffData.isEmpty || false, server };
 }

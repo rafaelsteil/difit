@@ -8,8 +8,9 @@ import { simpleGit, type SimpleGit } from 'simple-git';
 import pkg from '../../package.json' with { type: 'json' };
 import { startServer } from '../server/server.js';
 import { type CommentImport, type DiffSelection } from '../types/diff.js';
-import { createDiffSelection } from '../utils/diffSelection.js';
 import { DiffMode } from '../types/watch.js';
+import { createDiffSelection } from '../utils/diffSelection.js';
+import { logStartup, StartupTimer } from '../utils/startup-timer.js';
 
 import {
   shouldReadStdin,
@@ -185,6 +186,7 @@ export function createProgram(fileConfig: Partial<CliConfig>): Command {
       ).default(fileConfig.mergeBase ?? false),
     )
     .action(async (commitish: string, compareWith: string | undefined, options: CliOptions) => {
+      const startupTimer = new StartupTimer();
       try {
         const isBackgroundChild = process.env[BACKGROUND_CHILD_ENV] === '1';
         const backgroundMode = options.background || isBackgroundChild;
@@ -221,6 +223,8 @@ export function createProgram(fileConfig: Partial<CliConfig>): Command {
           options.open = false;
         }
 
+        startupTimer.mark('cliSetup');
+
         if (options.pr) {
           if (commitish !== 'HEAD' || compareWith) {
             console.error('Error: --pr option cannot be used with positional arguments');
@@ -240,6 +244,7 @@ export function createProgram(fileConfig: Partial<CliConfig>): Command {
           try {
             stdinDiff = getPrPatch(options.pr);
             stdinReviewLabel = options.pr;
+            startupTimer.mark('pr.patch');
           } catch (error) {
             console.error(
               `Error resolving PR: ${error instanceof Error ? error.message : 'Unknown error'}`,
@@ -250,6 +255,7 @@ export function createProgram(fileConfig: Partial<CliConfig>): Command {
           try {
             const prCommentImports = await getPrCommentImports(options.pr);
             commentImports = [...prCommentImports, ...manualCommentImports];
+            startupTimer.mark('pr.comments');
           } catch (error) {
             console.warn(
               `Warning: Failed to load PR review comments: ${error instanceof Error ? error.message : 'Unknown error'}`,
@@ -274,6 +280,7 @@ export function createProgram(fileConfig: Partial<CliConfig>): Command {
             }
             // Read unified diff from stdin
             stdinDiff = await readStdin();
+            startupTimer.mark('readStdin');
             if (!stdinDiff.trim()) {
               console.error('Error: No diff content received from stdin');
               process.exit(1);
@@ -292,6 +299,7 @@ export function createProgram(fileConfig: Partial<CliConfig>): Command {
             keepAlive: options.keepAlive,
             ...(commentImports.length > 0 ? { commentImports } : {}),
           });
+          logStartup('ready', process.uptime() * 1000);
 
           if (backgroundMode) {
             emitBackgroundHandshake({ port, url, pid: process.pid });
@@ -314,6 +322,7 @@ export function createProgram(fileConfig: Partial<CliConfig>): Command {
         let repoPath: string | undefined;
         try {
           repoPath = getGitRoot();
+          startupTimer.mark('getGitRoot');
         } catch {
           // If not in a git repository, fall back to process.cwd()
           repoPath = undefined;
@@ -334,6 +343,7 @@ export function createProgram(fileConfig: Partial<CliConfig>): Command {
             // Skip interactive prompts in detached background mode.
           } else {
             await handleUntrackedFiles(git, options.includeUntracked);
+            startupTimer.mark('untrackedFiles');
           }
         }
 
@@ -355,6 +365,7 @@ export function createProgram(fileConfig: Partial<CliConfig>): Command {
           repoPath,
           ...(commentImports.length > 0 ? { commentImports } : {}),
         });
+        logStartup('ready', process.uptime() * 1000);
 
         if (backgroundMode) {
           emitBackgroundHandshake({ port, url, pid: process.pid });
@@ -414,9 +425,12 @@ export function createProgram(fileConfig: Partial<CliConfig>): Command {
 }
 
 async function main(): Promise<void> {
+  logStartup('process uptime', process.uptime() * 1000);
   let fileConfig: Partial<CliConfig>;
   try {
+    const configStartedAt = performance.now();
     fileConfig = loadCliConfig();
+    logStartup('loadCliConfig', performance.now() - configStartedAt);
   } catch (error) {
     console.error(`Error: ${error instanceof Error ? error.message : 'Invalid config'}`);
     process.exit(1);

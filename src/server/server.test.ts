@@ -9,6 +9,7 @@ process.env.VITEST_SERVER_TEST = 'true';
 
 import { startServer } from './server.js';
 import type { CommentImport } from '../types/diff.js';
+import { StartupTimer } from '../utils/startup-timer.js';
 
 // Add fetch polyfill for Node.js test environment
 const { fetch } = await import('undici');
@@ -434,6 +435,7 @@ describe('Server Integration Tests', () => {
         { targetCommitish: 'HEAD', baseCommitish: 'HEAD^' },
         false,
         4,
+        expect.any(StartupTimer),
       );
     });
   });
