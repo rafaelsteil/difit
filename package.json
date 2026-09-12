@@ -46,6 +46,7 @@
     "build:cli": "tsc --project tsconfig.cli.json",
     "export:site-data": "node scripts/export-site-data.js",
     "package:vscode": "pnpm -C packages/vscode run package",
+    "package:tarball": "NODE_ENV=production pnpm run build && npm pack --ignore-scripts",
     "start": "pnpm run build && node dist/cli/index.js",
     "check": "oxlint . --type-aware --type-check --deny-warnings --report-unused-disable-directives",
     "check:fix": "oxlint . --type-aware --type-check --deny-warnings --report-unused-disable-directives --fix",
