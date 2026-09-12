@@ -9,6 +9,10 @@ const cliArgs = [...rawArgs, '--no-open'];
 const startupStartedAt = performance.now();
 
 function logDevStartup(label) {
+  if (process.env.DIFIT_DEBUG !== '1') {
+    return;
+  }
+
   const elapsedMs = Math.round(performance.now() - startupStartedAt);
   console.log(`[startup] ${label}: ${elapsedMs}ms`);
 }

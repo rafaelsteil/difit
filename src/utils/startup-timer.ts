@@ -1,5 +1,6 @@
 function shouldLogStartup(): boolean {
-  return !process.env.VITEST;
+  // Opt-in via DIFIT_DEBUG=1 so regular CLI/dev output stays quiet.
+  return process.env.DIFIT_DEBUG === '1' && !process.env.VITEST;
 }
 
 function formatMs(ms: number): string {
